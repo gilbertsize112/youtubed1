@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "server/index.ts" }
+    { "source": "/api/download", "destination": "api/download.ts" }
   ]
 }
