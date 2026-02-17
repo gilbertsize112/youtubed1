@@ -7,14 +7,16 @@ import cors from 'cors';
 const app = express();
 app.use(cors());
 
-// Shared request options to mimic a real browser
+// Enhanced request options to bypass Vercel-specific blocks
 const requestOptions = {
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Sec-Fetch-Mode': 'navigate'
-    }
+    },
+    // CRITICAL: Disable IPv6 as YouTube frequently blocks Vercel's IPv6 ranges
+    ipv6Fallback: false 
 };
 
 app.get('/api/download', async (req: any, res: any) => {
@@ -26,9 +28,13 @@ app.get('/api/download', async (req: any, res: any) => {
             return res.status(400).send('Please provide a YouTube URL');
         }
 
-        console.log(`✨ Fetching info for ${format.toUpperCase()}...`);
+        console.log(`✨ Fetching info for ${format.toUpperCase()}: ${videoURL}`);
         
-        // Pass requestOptions here to avoid 403/500 errors during info fetching
+        // Validate URL first
+        if (!ytdl.validateURL(videoURL)) {
+            return res.status(400).send('Invalid YouTube URL');
+        }
+
         const info = await ytdl.getInfo(videoURL, { requestOptions });
         const title = info.videoDetails.title.replace(/[^\x00-\x7F]/g, ""); 
 
@@ -39,7 +45,7 @@ app.get('/api/download', async (req: any, res: any) => {
             ytdl(videoURL, {
                 quality: 'highestaudio',
                 filter: 'audioonly',
-                requestOptions // Added here
+                requestOptions
             }).pipe(res);
 
         } else {
@@ -49,14 +55,20 @@ app.get('/api/download', async (req: any, res: any) => {
             ytdl(videoURL, {
                 quality: 'highest',
                 filter: 'audioandvideo',
-                requestOptions // Added here
+                requestOptions
             }).pipe(res);
         }
 
-    } catch (error) {
-        console.error('❌ Download Error:', error);
+    } catch (error: any) {
+        // Detailed logging for Vercel Dashboard
+        console.error('❌ YTDL ERROR:', error.message);
+        
         if (!res.headersSent) {
-            res.status(500).send('Internal Server Error');
+            res.status(500).json({
+                success: false,
+                message: 'Internal Server Error',
+                error: error.message
+            });
         }
     }
 });
