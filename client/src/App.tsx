@@ -4,11 +4,10 @@ function App() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
-  const [error, setError] = useState(false); // New state for the error transition
+  const [error, setError] = useState(false);
 
   const handleDownload = () => {
     if (!url) {
-      // Instead of alert, we trigger the error transition
       setError(true);
       setTimeout(() => setError(false), 3000);
       return;
@@ -17,7 +16,17 @@ function App() {
     setLoading(true);
     setShowStatus(true);
     
-    window.location.href = `http://localhost:4000/download?url=${encodeURIComponent(url)}`;
+    /**
+     * SMART URL SELECTION:
+     * If the browser URL contains 'localhost', it uses your local server (Port 4000).
+     * Otherwise, it uses the Vercel API path.
+     */
+    const isLocal = window.location.hostname === 'localhost';
+    const baseUrl = isLocal 
+      ? 'http://localhost:4000/download' 
+      : '/api/download'; // Vercel handles this via the rewrite in vercel.json
+
+    window.location.href = `${baseUrl}?url=${encodeURIComponent(url)}`;
     
     setTimeout(() => {
       setLoading(false);
