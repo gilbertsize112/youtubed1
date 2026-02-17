@@ -1,0 +1,78 @@
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Floating Red Glows in background */
+.bg-blob {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255,0,0,0.15) 0%, transparent 70%);
+  top: -100px;
+  left: -100px;
+  animation: move 15s infinite alternate;
+}
+
+.bg-blob-2 {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(255,0,0,0.1) 0%, transparent 70%);
+  bottom: -150px;
+  right: -100px;
+  animation: move 20s infinite alternate-reverse;
+}
+
+@keyframes move {
+  from { transform: translate(0, 0); }
+  to { transform: translate(100px, 100px); }
+}
+
+/* Card Entrance Animation */
+.main-card {
+  animation: fadeInUp 1s ease-out;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Floating Rocket Icon */
+.floating-icon {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
+}
+
+/* Neon Input Effect */
+.neon-input:focus {
+  border: 1px solid #FF0000 !important;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.2);
+}
+
+/* Shiny Button Effect */
+.shiny-button:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.4);
+}
+
+.shiny-button:active {
+  transform: scale(0.98);
+}
+
+/* Pulsing text when loading */
+.loader-text {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}

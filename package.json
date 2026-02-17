@@ -1,0 +1,15 @@
+{
+  "name": "yt-downloader-ts-root",
+  "version": "1.0.0",
+  "description": "StreamFetch Fullstack Project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install-all": "npm install --prefix client && npm install --prefix server",
+    "dev-server": "npm run start --prefix server",
+    "dev-client": "npm run dev --prefix client",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Gilbert Favour James",
+  "license": "ISC"
+}
