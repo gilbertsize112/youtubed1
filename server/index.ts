@@ -1,4 +1,4 @@
-// 1. STOP THE SCRIPT DUMPING: Must be at the very top
+
 process.env.YTDL_NO_UPDATE = 'true'; 
 
 import express from 'express';
@@ -9,12 +9,10 @@ import path from 'path';
 
 const app = express();
 
-// Updated CORS for Production: Allowing local and future cloud access
+
 app.use(cors());
 
-/**
- * CLEANUP SCRIPT: Deletes existing player-script.js files on startup
- */
+
 const cleanupOldScripts = () => {
     try {
         const files = fs.readdirSync('./');
@@ -23,7 +21,7 @@ const cleanupOldScripts = () => {
                 try {
                     fs.unlinkSync(path.join('./', file));
                 } catch (err) {
-                    // Silent catch
+                   
                 }
             }
         });
@@ -87,10 +85,13 @@ app.get('/download', async (req: any, res: any) => {
 });
 
 
-const PORT = process.env.PORT || 4000;
+export default app;
 
-app.listen(PORT, () => {
-    cleanupOldScripts(); 
-    console.log(`🚀 StreamFetch Server Clean & Active on Port ${PORT}`);
-    console.log(`Ready for requests!`);
-});
+
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 4000;
+    app.listen(PORT, () => {
+        cleanupOldScripts(); 
+        console.log(`🚀 StreamFetch Local Server Active on Port ${PORT}`);
+    });
+}
