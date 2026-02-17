@@ -3,14 +3,20 @@ process.env.YTDL_NO_UPDATE = 'true';
 import express from 'express';
 import ytdl from '@distube/ytdl-core';
 import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
 
 const app = express();
 app.use(cors());
 
-// Vercel handles the /api prefix, so we listen to the path defined in vercel.json
-// Changed from '/download' to '/api/download' to match your frontend call
+// Shared request options to mimic a real browser
+const requestOptions = {
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Mode': 'navigate'
+    }
+};
+
 app.get('/api/download', async (req: any, res: any) => {
     try {
         const videoURL = req.query.url as string;
@@ -22,7 +28,8 @@ app.get('/api/download', async (req: any, res: any) => {
 
         console.log(`✨ Fetching info for ${format.toUpperCase()}...`);
         
-        const info = await ytdl.getInfo(videoURL);
+        // Pass requestOptions here to avoid 403/500 errors during info fetching
+        const info = await ytdl.getInfo(videoURL, { requestOptions });
         const title = info.videoDetails.title.replace(/[^\x00-\x7F]/g, ""); 
 
         if (format === 'mp3') {
@@ -31,7 +38,8 @@ app.get('/api/download', async (req: any, res: any) => {
             
             ytdl(videoURL, {
                 quality: 'highestaudio',
-                filter: 'audioonly'
+                filter: 'audioonly',
+                requestOptions // Added here
             }).pipe(res);
 
         } else {
@@ -40,7 +48,8 @@ app.get('/api/download', async (req: any, res: any) => {
 
             ytdl(videoURL, {
                 quality: 'highest',
-                filter: 'audioandvideo'
+                filter: 'audioandvideo',
+                requestOptions // Added here
             }).pipe(res);
         }
 
@@ -52,10 +61,8 @@ app.get('/api/download', async (req: any, res: any) => {
     }
 });
 
-// Important: Export the app for Vercel
 export default app;
 
-// Local development logic
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 4000;
     app.listen(PORT, () => {
