@@ -1,4 +1,3 @@
-
 process.env.YTDL_NO_UPDATE = 'true'; 
 
 import express from 'express';
@@ -8,42 +7,11 @@ import fs from 'fs';
 import path from 'path';
 
 const app = express();
-
-
 app.use(cors());
 
-
-const cleanupOldScripts = () => {
-    try {
-        const files = fs.readdirSync('./');
-        files.forEach(file => {
-            if (file.endsWith('-player-script.js')) {
-                try {
-                    fs.unlinkSync(path.join('./', file));
-                } catch (err) {
-                   
-                }
-            }
-        });
-    } catch (e) {
-        console.log("Note: Cleanup skipped (likely directory read permissions)");
-    }
-};
-
-const originalWarn = console.warn;
-console.warn = (...args) => {
-    const message = args[0]?.toString() || '';
-    if (
-        message.includes('Please report this issue') || 
-        message.includes('Could not parse') || 
-        message.includes('player-script')
-    ) {
-        return; 
-    }
-    originalWarn(...args);
-};
-
-app.get('/download', async (req: any, res: any) => {
+// Vercel handles the /api prefix, so we listen to the path defined in vercel.json
+// Changed from '/download' to '/api/download' to match your frontend call
+app.get('/api/download', async (req: any, res: any) => {
     try {
         const videoURL = req.query.url as string;
         const format = req.query.format as string || 'mp4'; 
@@ -84,14 +52,13 @@ app.get('/download', async (req: any, res: any) => {
     }
 });
 
-
+// Important: Export the app for Vercel
 export default app;
 
-
+// Local development logic
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 4000;
     app.listen(PORT, () => {
-        cleanupOldScripts(); 
         console.log(`🚀 StreamFetch Local Server Active on Port ${PORT}`);
     });
 }
