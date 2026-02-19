@@ -1,28 +1,35 @@
 body {
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-y: auto;  /* ✅ Fixed: Allow vertical scrolling */
+  overflow-x: hidden; /* Prevent horizontal scroll */
+  min-height: 100vh;
+  background: #000;
 }
 
 /* Floating Red Glows in background */
 .bg-blob {
-  position: absolute;
+  position: fixed;  /* Changed to fixed so it stays in place while scrolling */
   width: 400px;
   height: 400px;
   background: radial-gradient(circle, rgba(255,0,0,0.15) 0%, transparent 70%);
   top: -100px;
   left: -100px;
   animation: move 15s infinite alternate;
+  pointer-events: none; /* Prevent interference with clicks */
+  z-index: -1;
 }
 
 .bg-blob-2 {
-  position: absolute;
+  position: fixed;  /* Changed to fixed so it stays in place while scrolling */
   width: 500px;
   height: 500px;
   background: radial-gradient(circle, rgba(255,0,0,0.1) 0%, transparent 70%);
   bottom: -150px;
   right: -100px;
   animation: move 20s infinite alternate-reverse;
+  pointer-events: none; /* Prevent interference with clicks */
+  z-index: -1;
 }
 
 @keyframes move {

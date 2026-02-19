@@ -1,600 +1,1039 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 
+// ==========================================
+// TYPES
+// ==========================================
+type Platform = 'youtube' | 'facebook' | 'tiktok' | null;
 type DownloadStage = 'connecting' | 'fetching' | 'quality' | 'starting' | 'downloading' | 'complete' | null;
 
-function App() {
-  const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showStatus, setShowStatus] = useState(false);
-  const [error, setError] = useState(false);
-  const [currentStage, setCurrentStage] = useState<DownloadStage>(null);
-  const [progress, setProgress] = useState(0);
+interface StageConfig {
+  id: Exclude<DownloadStage, null>;
+  label: string;
+  emoji: string;
+}
 
-  const stages = [
-    { id: 'connecting', label: 'Connecting to YouTube', emoji: '🔗' },
-    { id: 'fetching', label: 'Fetching video info', emoji: '📡' },
-    { id: 'quality', label: 'Getting best quality stream', emoji: '⚙️' },
-    { id: 'starting', label: 'Starting download', emoji: '🚀' },
-    { id: 'downloading', label: 'Downloading content', emoji: '📥' },
-    { id: 'complete', label: 'Download complete', emoji: '✨' }
-  ];
+// ==========================================
+// CONSTANTS
+// ==========================================
+const YOUTUBE_STAGES: StageConfig[] = [
+  { id: 'connecting', label: 'Connecting to YouTube', emoji: '🔗' },
+  { id: 'fetching', label: 'Fetching video info', emoji: '📡' },
+  { id: 'quality', label: 'Getting best quality', emoji: '⚙️' },
+  { id: 'starting', label: 'Starting download', emoji: '🚀' },
+  { id: 'downloading', label: 'Downloading video', emoji: '📥' },
+  { id: 'complete', label: 'Download complete', emoji: '✨' }
+];
 
-  const handleDownload = () => {
-    if (!url) {
-      setError(true);
-      setTimeout(() => setError(false), 3000);
-      return;
+const FACEBOOK_STAGES: StageConfig[] = [
+  { id: 'connecting', label: 'Connecting to Facebook', emoji: '🔗' },
+  { id: 'fetching', label: 'Fetching video info', emoji: '📡' },
+  { id: 'quality', label: 'Processing video', emoji: '⚙️' },
+  { id: 'starting', label: 'Starting download', emoji: '🚀' },
+  { id: 'downloading', label: 'Downloading video', emoji: '📥' },
+  { id: 'complete', label: 'Download complete', emoji: '✨' }
+];
+
+const TIKTOK_STAGES: StageConfig[] = [
+  { id: 'connecting', label: 'Connecting to TikTok', emoji: '🔗' },
+  { id: 'fetching', label: 'Fetching video info', emoji: '📡' },
+  { id: 'quality', label: 'Processing video', emoji: '⚙️' },
+  { id: 'starting', label: 'Starting download', emoji: '🚀' },
+  { id: 'downloading', label: 'Downloading video', emoji: '📥' },
+  { id: 'complete', label: 'Download complete', emoji: '✨' }
+];
+
+const CSS_INJECTION = `
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  html { 
+    scroll-behavior: smooth;
+    overflow-y: scroll !important; 
+    overflow-x: hidden;
+    height: auto !important;
+  }
+  
+  body { 
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    overflow-y: auto !important; 
+    overflow-x: hidden;
+    background: #000;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  
+  #root {
+    min-height: 100vh;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+  }
+  
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(60px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes slideDown { from { opacity: 0; transform: translate(-50%, -30px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.05); } }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); } }
+  @keyframes float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-20px) rotate(5deg); } }
+  @keyframes glowRed { 0%, 100% { box-shadow: 0 0 30px rgba(255, 0, 0, 0.6), 0 0 60px rgba(255, 0, 0, 0.3); } 50% { box-shadow: 0 0 50px rgba(255, 0, 0, 0.9), 0 0 100px rgba(255, 0, 0, 0.5); } }
+  @keyframes glowBlue { 0%, 100% { box-shadow: 0 0 30px rgba(24, 119, 242, 0.6), 0 0 60px rgba(24, 119, 242, 0.3); } 50% { box-shadow: 0 0 50px rgba(24, 119, 242, 0.9), 0 0 100px rgba(24, 119, 242, 0.5); } }
+  @keyframes glowPurple { 0%, 100% { box-shadow: 0 0 30px rgba(236, 72, 153, 0.6), 0 0 60px rgba(236, 72, 153, 0.3); } 50% { box-shadow: 0 0 50px rgba(236, 72, 153, 0.9), 0 0 100px rgba(236, 72, 153, 0.5); } }
+  @keyframes borderRotate { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+  @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
+  @keyframes particle { 0% { transform: translateY(100vh) rotate(0deg); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; } }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes heartbeat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.1); } 28% { transform: scale(1); } 42% { transform: scale(1.1); } 70% { transform: scale(1); } }
+  @keyframes rotate3d { 0% { transform: rotateY(0deg); } 100% { transform: rotateY(360deg); } }
+  
+  .animated-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    min-height: 100%;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a0000 25%, #000a1a 50%, #0a0a0a 75%, #1a0000 100%);
+    background-size: 400% 400%;
+    animation: borderRotate 15s ease infinite;
+    z-index: -2;
+  }
+  
+  .particles {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+  }
+  
+  .particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: rgba(255, 0, 0, 0.6);
+    border-radius: 50%;
+    animation: particle 8s linear infinite;
+  }
+  
+  .particle:nth-child(2n) { background: rgba(24, 119, 242, 0.6); animation-delay: -2s; left: 20%; }
+  .particle:nth-child(3n) { background: rgba(255, 0, 0, 0.4); animation-delay: -4s; left: 40%; }
+  .particle:nth-child(4n) { background: rgba(24, 119, 242, 0.4); animation-delay: -6s; left: 60%; }
+  .particle:nth-child(5n) { background: rgba(255, 0, 0, 0.5); animation-delay: -1s; left: 80%; }
+  .particle:nth-child(6n) { background: rgba(24, 119, 242, 0.5); animation-delay: -3s; left: 10%; }
+  .particle:nth-child(7n) { animation-delay: -5s; left: 30%; }
+  .particle:nth-child(8n) { animation-delay: -7s; left: 50%; }
+  .particle:nth-child(9n) { animation-delay: -2.5s; left: 70%; }
+  .particle:nth-child(10n) { animation-delay: -4.5s; left: 90%; }
+  
+  .scanline-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.1) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.3;
+  }
+  
+  .error-shake { animation: shake 0.5s ease-in-out; }
+  
+  .status-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 30px;
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.95), rgba(180, 0, 0, 0.95));
+    border: 2px solid #ff3333;
+    color: #fff;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 10px 40px rgba(255, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+  }
+  
+  .card-youtube { animation: glowRed 3s ease-in-out infinite; }
+  .card-facebook { animation: glowBlue 3s ease-in-out infinite; }
+  .card-tiktok { animation: glowPurple 3s ease-in-out infinite; }
+  
+  .btn-youtube {
+    background: linear-gradient(135deg, #FF0000, #CC0000) !important;
+    box-shadow: 0 10px 30px rgba(255, 0, 0, 0.5) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-youtube::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: 0.5s;
+  }
+  .btn-youtube:hover::before {
+    left: 100%;
+  }
+  .btn-youtube:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.02) !important;
+    box-shadow: 0 15px 40px rgba(255, 0, 0, 0.7) !important;
+  }
+  
+  .btn-facebook {
+    background: linear-gradient(135deg, #1877F2, #0d5cb6) !important;
+    box-shadow: 0 10px 30px rgba(24, 119, 242, 0.5) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-facebook::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: 0.5s;
+  }
+  .btn-facebook:hover::before {
+    left: 100%;
+  }
+  .btn-facebook:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.02) !important;
+    box-shadow: 0 15px 40px rgba(24, 119, 242, 0.7) !important;
+  }
+  
+  .btn-tiktok {
+    background: linear-gradient(135deg, #EC4899, #BE123C) !important;
+    box-shadow: 0 10px 30px rgba(236, 72, 153, 0.5) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-tiktok::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: 0.5s;
+  }
+  .btn-tiktok:hover::before {
+    left: 100%;
+  }
+  .btn-tiktok:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.02) !important;
+    box-shadow: 0 15px 40px rgba(236, 72, 153, 0.7) !important;
+  }
+  
+  .icon-float { animation: float 4s ease-in-out infinite; display: inline-block; }
+  
+  .shimmer-text {
+    background: linear-gradient(90deg, #fff, #ff6b6b, #fff, #6b9fff, #fff);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s linear infinite;
+  }
+  
+  .author-glow {
+    animation: heartbeat 2s ease-in-out infinite;
+    display: inline-block;
+  }
+  
+  @media (max-width: 900px) {
+    .platform-grid { 
+      flex-direction: column !important; 
+      align-items: center !important; 
+      overflow-x: hidden !important;
     }
-    
-    setLoading(true);
-    setShowStatus(true);
-    setCurrentStage('connecting');
-    setProgress(0);
+    .platform-card { 
+      max-width: 100% !important; 
+      width: 100% !important; 
+      min-width: unset !important;
+    }
+  }
+  
+  @media (max-width: 600px) {
+    .main-title { font-size: 36px !important; }
+    .subtitle { font-size: 14px !important; }
+  }
+`;
 
-    // Simulate stage progression
-    const stageTimings = [
-      { stage: 'connecting' as DownloadStage, delay: 500, progress: 15 },
-      { stage: 'fetching' as DownloadStage, delay: 2000, progress: 30 },
-      { stage: 'quality' as DownloadStage, delay: 4000, progress: 50 },
-      { stage: 'starting' as DownloadStage, delay: 6000, progress: 70 },
-      { stage: 'downloading' as DownloadStage, delay: 8000, progress: 90 }
-    ];
+// ==========================================
+// COMPONENTS
+// ==========================================
+const ErrorToast = memo(({ message }: { message: string }) => (
+  <div className="status-toast error-shake">
+    <span>⚠️</span>
+    {message}
+  </div>
+));
 
-    stageTimings.forEach(({ stage, delay, progress: prog }) => {
-      setTimeout(() => {
-        setCurrentStage(stage);
-        setProgress(prog);
-      }, delay);
-    });
+const LoadingOverlay = memo(({ 
+  platform, 
+  progress, 
+  currentStage 
+}: { 
+  platform: Platform; 
+  progress: number; 
+  currentStage: DownloadStage;
+}) => {
+  let stages: StageConfig[];
+  let accentColor: string;
 
-    const isLocal = window.location.hostname === 'localhost';
-    const baseUrl = isLocal 
-      ? 'http://localhost:4000/api/download' 
-      : '/api/download';
+  if (platform === 'facebook') {
+    stages = FACEBOOK_STAGES;
+    accentColor = '#1877F2';
+  } else if (platform === 'tiktok') {
+    stages = TIKTOK_STAGES;
+    accentColor = '#EC4899';
+  } else {
+    stages = YOUTUBE_STAGES;
+    accentColor = '#FF0000';
+  }
 
-    // Start the actual download after a brief delay
-    setTimeout(() => {
-      window.location.href = `${baseUrl}?url=${encodeURIComponent(url)}`;
-      
-      // Clear loading state after download starts
-      setTimeout(() => {
-        setLoading(false);
-        setShowStatus(false);
-        setCurrentStage(null);
-        setProgress(0);
-      }, 5000);
-    }, 500);
-  };
-
-  const getStageIndex = () => {
-    return stages.findIndex(s => s.id === currentStage);
-  };
-
-  const currentStageIndex = getStageIndex();
+  const currentIndex = stages.findIndex(s => s.id === currentStage);
 
   return (
-    <div style={styles.container}>
-      {/* Animated Mesh Background */}
-      <div className="mesh-gradient"></div>
-
-      {/* Beautified Error Transition (Replaces the Alert) */}
-      {error && (
-        <div className="status-toast error-shake" style={{ backgroundColor: '#ff3333' }}>
-          <span style={{marginRight: '10px'}}>⚠️</span>
-          Please paste a YouTube link first!
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.95)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999,
+      animation: 'fadeIn 0.3s ease',
+      backdropFilter: 'blur(10px)',
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: 'rgba(10, 10, 10, 0.98)',
+        border: `3px solid ${accentColor}`,
+        borderRadius: '20px',
+        padding: '35px',
+        maxWidth: '500px',
+        width: '100%',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        boxShadow: `0 0 80px ${accentColor}40, inset 0 0 30px ${accentColor}20`,
+        animation: 'slideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+          <div style={{
+            width: '60px',
+            height: '60px',
+            margin: '0 auto 15px',
+            borderRadius: '50%',
+            background: `linear-gradient(135deg, ${accentColor}, ${platform === 'facebook' ? '#0d5cb6' : platform === 'tiktok' ? '#BE123C' : '#CC0000'})`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '30px',
+            animation: 'pulse 2s infinite',
+            boxShadow: `0 0 30px ${accentColor}`
+          }}>
+            {platform === 'facebook' ? '📘' : platform === 'tiktok' ? '🎵' : '▶️'}
+          </div>
+          <h2 style={{
+            color: accentColor,
+            fontSize: '22px',
+            fontWeight: 900,
+            letterSpacing: '3px',
+            textTransform: 'uppercase',
+            margin: 0,
+            textShadow: `0 0 20px ${accentColor}80`
+          }}>
+            {platform === 'facebook' ? 'FACEBOOK' : platform === 'tiktok' ? 'TIKTOK' : 'YOUTUBE'} DOWNLOAD
+          </h2>
         </div>
-      )}
 
-      {/* Enhanced Loading Modal with Robotic Design */}
-      {loading && showStatus && (
-        <div style={styles.loadingOverlay}>
-          <div style={styles.loadingContainer}>
-            {/* Robotic Header */}
-            <div style={styles.roboticHeader}>
-              <div style={styles.scanlineEffect}></div>
-              <h2 style={styles.loadingTitle}>DOWNLOAD INITIATED</h2>
-              <div style={styles.statusBar}>
-                <div style={{...styles.statusBarFill, width: `${progress}%`}}></div>
+        <div style={{
+          height: '12px',
+          backgroundColor: 'rgba(255,255,255,0.1)',
+          borderRadius: '6px',
+          overflow: 'hidden',
+          border: `1px solid ${accentColor}40`,
+          marginBottom: '10px'
+        }}>
+          <div style={{
+            height: '100%',
+            width: `${progress}%`,
+            background: `linear-gradient(90deg, ${accentColor}, ${platform === 'facebook' ? '#4a9eff' : platform === 'tiktok' ? '#ff6b9d' : '#ff6b6b'})`,
+            transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+            borderRadius: '6px',
+            boxShadow: `0 0 20px ${accentColor}`
+          }} />
+        </div>
+        <p style={{ color: accentColor, textAlign: 'right', fontSize: '14px', fontWeight: 'bold', margin: '0 0 25px 0' }}>
+          {progress}%
+        </p>
+
+        <div style={{
+          backgroundColor: 'rgba(255,255,255,0.03)',
+          border: `1px solid ${accentColor}30`,
+          borderRadius: '12px',
+          padding: '20px',
+          marginBottom: '20px'
+        }}>
+          {stages.map((stage, index) => {
+            const isComplete = index < currentIndex;
+            const isActive = index === currentIndex;
+            
+            return (
+              <div key={stage.id} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 0',
+                opacity: isComplete || isActive ? 1 : 0.4,
+                transition: 'all 0.3s ease'
+              }}>
+                <span style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  backgroundColor: isComplete ? '#00ff00' : isActive ? accentColor : 'rgba(255,255,255,0.1)',
+                  color: isComplete || isActive ? '#000' : '#fff',
+                  boxShadow: isActive ? `0 0 15px ${accentColor}` : 'none'
+                }}>
+                  {isComplete ? '✓' : stage.emoji}
+                </span>
+                <span style={{
+                  color: isActive ? accentColor : '#888',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 700 : 400
+                }}>
+                  {stage.label}
+                </span>
+                {isActive && (
+                  <span style={{
+                    marginLeft: 'auto',
+                    width: '8px',
+                    height: '8px',
+                    backgroundColor: accentColor,
+                    borderRadius: '50%',
+                    animation: 'pulse 1s infinite'
+                  }} />
+                )}
               </div>
-              <p style={styles.percentageText}>{progress}%</p>
-            </div>
-
-            {/* Stage Indicators */}
-            <div style={styles.stagesContainer}>
-              {stages.map((stage, index) => (
-                <div key={stage.id} style={styles.stageWrapper}>
-                  <div 
-                    style={{
-                      ...styles.stageIndicator,
-                      ...(index < currentStageIndex 
-                        ? styles.stageComplete 
-                        : index === currentStageIndex 
-                        ? styles.stageActive 
-                        : styles.stagePending)
-                    }}
-                  >
-                    <div style={styles.stageContent}>
-                      <span style={styles.stageEmoji}>{stage.emoji}</span>
-                      <div style={styles.stageLine}></div>
-                    </div>
-                  </div>
-                  <p style={{
-                    ...styles.stageLabel,
-                    ...(index === currentStageIndex && styles.stageLabelActive)
-                  }}>
-                    {stage.label}
-                  </p>
-                  {index < stages.length - 1 && (
-                    <div style={{
-                      ...styles.stageConnector,
-                      ...(index < currentStageIndex && styles.stageConnectorComplete)
-                    }}></div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Real-time Status Message */}
-            <div style={styles.statusMessage}>
-              <div style={styles.pulsingDot}></div>
-              <p style={styles.statusText}>
-                {currentStage === 'connecting' && 'Establishing secure connection to YouTube servers...'}
-                {currentStage === 'fetching' && 'Analyzing video metadata and available formats...'}
-                {currentStage === 'quality' && 'Scanning for optimal quality streams and codecs...'}
-                {currentStage === 'starting' && 'Initializing download pipeline and buffer allocation...'}
-                {currentStage === 'downloading' && 'Streaming video data and processing packets...'}
-              </p>
-            </div>
-
-            {/* Robotic Footer */}
-            <div style={styles.roboticFooter}>
-              <div style={styles.footerBorder}></div>
-              <p style={styles.footerText}>🔴 ACTIVE • PROCESSING VIDEO DATA</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div 
-        style={{
-          ...styles.card,
-          transform: loading ? 'scale(0.95)' : 'scale(1)',
-          filter: loading ? 'brightness(0.6)' : 'brightness(1)',
-          pointerEvents: loading ? 'none' : 'auto',
-          opacity: loading ? 0.7 : 1
-        }} 
-        className="main-card"
-      >
-        <div style={styles.logoSection}>
-          <div className="icon-wrapper">
-             <span className="floating-icon" style={styles.icon}>🎬</span>
-          </div>
-          <h1 style={styles.title}>Stream<span style={{color: '#FF0000'}}>Fetch</span></h1>
-        </div>
-        
-        <p style={styles.subtitle}>Premium YouTube Content Extractor</p>
-
-        <div style={styles.inputGroup}>
-          <input 
-            type="text" 
-            inputMode="url"
-            placeholder="Paste YouTube link..." 
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            style={styles.input}
-            className="neon-input"
-            disabled={loading}
-          />
-          <button 
-            onClick={handleDownload}
-            disabled={loading}
-            style={{
-              ...styles.button,
-              backgroundColor: loading ? '#222' : '#FF0000',
-              opacity: loading ? 0.5 : 1,
-              boxShadow: loading ? 'none' : '0 10px 30px rgba(255, 0, 0, 0.3)',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-            className="shiny-button"
-          >
-            {loading ? (
-              <span className="loader-text">⚡ Processing...</span>
-            ) : (
-              'Download MP4'
-            )}
-          </button>
+            );
+          })}
         </div>
 
-        {/* Dynamic Download Note */}
-        {!loading && (
-          <p style={styles.downloadNote}>
-            Fetching high-quality streams from YouTube servers...
-          </p>
-        )}
-
-        <div style={styles.footer}>
-          <span>4K High Fidelity</span>
-          <span style={{margin: '0 8px'}}>•</span>
-          <span>No Limits</span>
-        </div>
-
-        <div style={styles.branding}>
-           <p>© 2026 StreamFetch | All Rights Reserved</p>
-           <p style={styles.author}>Built with 🔥 by <span style={{color: '#fff', fontWeight: 'bold'}}>Gilbert Favour James</span></p>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '15px',
+          backgroundColor: `${accentColor}15`,
+          border: `1px solid ${accentColor}40`,
+          borderRadius: '10px'
+        }}>
+          <div style={{
+            width: '10px',
+            height: '10px',
+            backgroundColor: accentColor,
+            borderRadius: '50%',
+            animation: 'pulse 1.5s infinite',
+            boxShadow: `0 0 10px ${accentColor}`
+          }} />
+          <span style={{ color: '#ccc', fontSize: '13px' }}>
+            {currentStage === 'connecting' && 'Establishing secure connection...'}
+            {currentStage === 'fetching' && 'Retrieving video metadata...'}
+            {currentStage === 'quality' && 'Processing optimal quality...'}
+            {currentStage === 'starting' && 'Initializing download stream...'}
+            {currentStage === 'downloading' && 'Downloading content to your device...'}
+            {currentStage === 'complete' && 'Download completed successfully!'}
+            {!currentStage && 'Preparing download...'}
+          </span>
         </div>
       </div>
     </div>
   );
-}
+});
 
-const styles = {
-  container: {
-    minHeight: '100vh',
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000',
-    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-    margin: 0,
-    padding: '20px',
-    boxSizing: 'border-box' as const,
-    overflowX: 'hidden' as const,
-    position: 'relative' as const,
-  },
-  loadingOverlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-    animation: 'fadeIn 0.3s ease-in',
-    backdropFilter: 'blur(5px)',
-  },
-  loadingContainer: {
-    backgroundColor: 'rgba(10, 10, 10, 0.95)',
-    border: '2px solid #FF0000',
-    borderRadius: '10px',
-    padding: '40px',
-    maxWidth: '500px',
-    width: '100%',
-    boxShadow: '0 0 60px rgba(255, 0, 0, 0.3), inset 0 0 20px rgba(255, 0, 0, 0.1)',
-    animation: 'slideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-  },
-  roboticHeader: {
-    marginBottom: '30px',
-    position: 'relative' as const,
-  },
-  scanlineEffect: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '2px',
-    background: 'linear-gradient(90deg, transparent, #FF0000, transparent)',
-    animation: 'scanline 2s infinite',
-  },
-  loadingTitle: {
-    color: '#FF0000',
-    fontSize: '20px',
-    fontWeight: '900',
-    margin: '10px 0 20px 0',
-    letterSpacing: '3px',
-    textTransform: 'uppercase' as const,
-    textShadow: '0 0 10px rgba(255, 0, 0, 0.5)',
-  },
-  statusBar: {
-    width: '100%',
-    height: '8px',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: '4px',
-    overflow: 'hidden' as const,
-    border: '1px solid rgba(255, 0, 0, 0.3)',
-    marginBottom: '10px',
-  },
-  statusBarFill: {
-    height: '100%',
-    backgroundColor: '#FF0000',
-    transition: 'width 0.5s ease',
-    boxShadow: '0 0 10px rgba(255, 0, 0, 0.8)',
-  },
-  percentageText: {
-    color: '#aaa',
-    fontSize: '12px',
-    textAlign: 'right' as const,
-    letterSpacing: '1px',
-    margin: '8px 0 0 0',
-  },
-  stagesContainer: {
-    margin: '30px 0',
-    padding: '20px',
-    backgroundColor: 'rgba(255, 0, 0, 0.05)',
-    border: '1px solid rgba(255, 0, 0, 0.2)',
-    borderRadius: '8px',
-  },
-  stageWrapper: {
-    marginBottom: '20px',
-    position: 'relative' as const,
-  },
-  stageIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 16px',
-    borderRadius: '6px',
-    transition: 'all 0.4s ease',
-    border: '1px solid rgba(255, 0, 0, 0.2)',
-  },
-  stageComplete: {
-    backgroundColor: 'rgba(0, 255, 0, 0.1)',
-    border: '1px solid rgba(0, 255, 0, 0.3)',
-  },
-  stageActive: {
-    backgroundColor: 'rgba(255, 0, 0, 0.15)',
-    border: '1px solid rgba(255, 0, 0, 0.6)',
-    boxShadow: '0 0 15px rgba(255, 0, 0, 0.4), inset 0 0 10px rgba(255, 0, 0, 0.1)',
-  },
-  stagePending: {
-    backgroundColor: 'rgba(100, 100, 100, 0.1)',
-    border: '1px solid rgba(100, 100, 100, 0.2)',
-    opacity: 0.6,
-  },
-  stageContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  stageEmoji: {
-    fontSize: '20px',
-    minWidth: '24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stageLine: {
-    flex: 1,
-    height: '1px',
-    background: 'linear-gradient(90deg, rgba(255, 0, 0, 0.5), transparent)',
-  },
-  stageLabel: {
-    color: '#888',
-    fontSize: '13px',
-    margin: '8px 0 0 36px',
-    letterSpacing: '0.5px',
-    transition: 'all 0.3s ease',
-  },
-  stageLabelActive: {
-    color: '#FF0000',
-    fontWeight: '600' as const,
-  },
-  stageConnector: {
-    position: 'absolute' as const,
-    left: '32px',
-    top: '48px',
-    width: '2px',
-    height: '20px',
-    background: 'linear-gradient(180deg, rgba(100, 100, 100, 0.3), transparent)',
-    transition: 'background 0.4s ease',
-  },
-  stageConnectorComplete: {
-    background: 'linear-gradient(180deg, rgba(0, 255, 0, 0.5), transparent)',
-  },
-  statusMessage: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    border: '1px solid rgba(255, 0, 0, 0.2)',
-    borderRadius: '6px',
-    padding: '15px',
-    marginBottom: '20px',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '12px',
-  },
-  pulsingDot: {
-    width: '8px',
-    height: '8px',
-    backgroundColor: '#FF0000',
-    borderRadius: '50%',
-    marginTop: '5px',
-    minWidth: '8px',
-    animation: 'pulse 1.5s infinite',
-    boxShadow: '0 0 8px rgba(255, 0, 0, 0.8)',
-  },
-  statusText: {
-    color: '#aaa',
-    fontSize: '13px',
-    lineHeight: '1.6',
-    margin: 0,
-    letterSpacing: '0.5px',
-  },
-  roboticFooter: {
-    borderTop: '2px solid rgba(255, 0, 0, 0.3)',
-    paddingTop: '15px',
-  },
-  footerBorder: {
-    height: '2px',
-    background: 'linear-gradient(90deg, transparent, #FF0000, transparent)',
-    marginBottom: '10px',
-  },
-  footerText: {
-    color: '#FF0000',
-    fontSize: '11px',
-    textAlign: 'center' as const,
-    letterSpacing: '2px',
-    margin: 0,
-    textTransform: 'uppercase' as const,
-    fontWeight: '700',
-  },
-  card: {
-    backgroundColor: 'rgba(15, 15, 15, 0.75)',
-    backdropFilter: 'blur(25px)',
-    WebkitBackdropFilter: 'blur(25px)',
-    padding: 'clamp(30px, 8vw, 60px) clamp(20px, 5vw, 40px)',
-    borderRadius: '35px',
-    boxShadow: '0 25px 80px -12px rgba(255, 0, 0, 0.15)',
-    width: '100%',
-    maxWidth: '450px',
-    textAlign: 'center' as const,
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    zIndex: 10,
-    transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-  },
-  logoSection: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '15px',
-  },
-  icon: { fontSize: 'clamp(40px, 10vw, 60px)' },
-  title: {
-    fontSize: 'clamp(32px, 8vw, 48px)',
-    fontWeight: '900',
-    color: '#fff',
-    margin: 0,
-    letterSpacing: '-2px',
-    textTransform: 'uppercase' as const,
-  },
-  subtitle: {
-    color: '#aaa',
-    fontSize: 'clamp(14px, 3.5vw, 16px)',
-    marginBottom: '35px',
-    fontWeight: 400,
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  },
-  input: {
-    padding: '18px',
-    borderRadius: '16px',
-    border: '2px solid rgba(255,255,255,0.05)',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    color: '#fff',
-    fontSize: '16px',
-    outline: 'none',
-    textAlign: 'center' as const,
-    transition: 'all 0.3s ease',
-  },
-  button: {
-    padding: '18px',
-    borderRadius: '16px',
-    border: 'none',
-    color: '#fff',
-    fontSize: '18px',
-    fontWeight: '800',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '1px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-  },
-  downloadNote: {
-    color: '#FF0000',
-    fontSize: '13px',
-    marginTop: '15px',
-    animation: 'pulse 1.5s infinite',
-    fontWeight: '500'
-  },
-  footer: {
-    marginTop: '40px',
-    fontSize: '11px',
-    color: '#555',
-    letterSpacing: '1.5px',
-    textTransform: 'uppercase' as const,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  branding: {
-    marginTop: '40px',
-    paddingTop: '25px',
-    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-    fontSize: '12px',
-    color: '#444',
-  },
-  author: {
-    marginTop: '8px',
-    fontSize: '13px',
-    color: '#666'
+const PlatformCard = memo(({ 
+  platform, 
+  url, 
+  setUrl, 
+  loading, 
+  onDownload 
+}: { 
+  platform: 'youtube' | 'facebook' | 'tiktok';
+  url: string;
+  setUrl: (url: string) => void;
+  loading: boolean;
+  onDownload: () => void;
+}) => {
+  let accentColor: string;
+  let cardClass: string;
+  let btnClass: string;
+  let icon: string;
+  let title: string;
+  let subtitle: string;
+  let buttonText: string;
+  let gradientEnd: string;
+
+  if (platform === 'facebook') {
+    accentColor = '#1877F2';
+    cardClass = 'card-facebook';
+    btnClass = 'btn-facebook';
+    icon = '📘';
+    title = 'Facebook';
+    subtitle = 'Reel & Video Downloader';
+    buttonText = 'Download Reel';
+    gradientEnd = '#0d5cb6';
+  } else if (platform === 'tiktok') {
+    accentColor = '#EC4899';
+    cardClass = 'card-tiktok';
+    btnClass = 'btn-tiktok';
+    icon = '🎵';
+    title = 'TikTok';
+    subtitle = 'Video & Sound Downloader';
+    buttonText = 'Download Video';
+    gradientEnd = '#BE123C';
+  } else {
+    accentColor = '#FF0000';
+    cardClass = 'card-youtube';
+    btnClass = 'btn-youtube';
+    icon = '▶️';
+    title = 'YouTube';
+    subtitle = 'Video Downloader';
+    buttonText = 'Download Video';
+    gradientEnd = '#CC0000';
   }
-};
+  
+  return (
+    <div className={`platform-card ${cardClass}`} style={{
+      backgroundColor: 'rgba(15, 15, 15, 0.95)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: '30px',
+      padding: '40px 35px',
+      width: '100%',
+      maxWidth: '420px',
+      minWidth: '380px',
+      border: `2px solid ${accentColor}50`,
+      boxShadow: `0 20px 60px ${accentColor}30, inset 0 0 20px rgba(255,255,255,0.02)`,
+      transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+      transform: loading ? 'scale(0.95)' : 'scale(1)',
+      opacity: loading ? 0.7 : 1,
+      pointerEvents: loading ? 'none' : 'auto',
+      flex: '1 1 400px',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      <div style={{
+        position: 'absolute',
+        top: '-50%',
+        left: '-50%',
+        width: '200%',
+        height: '200%',
+        background: `radial-gradient(circle, ${accentColor}10 0%, transparent 70%)`,
+        pointerEvents: 'none'
+      }} />
+      
+      <div style={{ textAlign: 'center', marginBottom: '35px', position: 'relative', zIndex: 1 }}>
+        <div className="icon-float" style={{
+          width: '90px',
+          height: '90px',
+          margin: '0 auto 25px',
+          borderRadius: '24px',
+          background: `linear-gradient(135deg, ${accentColor}, ${gradientEnd})`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '45px',
+          boxShadow: `0 15px 50px ${accentColor}60`,
+          border: `3px solid rgba(255,255,255,0.1)`
+        }}>
+          {icon}
+        </div>
+        <h2 style={{
+          fontSize: '36px',
+          fontWeight: 900,
+          color: '#fff',
+          margin: 0,
+          letterSpacing: '-1px',
+          marginBottom: '8px'
+        }}>
+          <span className="shimmer-text">{title}</span>
+        </h2>
+        <p style={{
+          color: '#666',
+          fontSize: '14px',
+          fontWeight: 500,
+          letterSpacing: '1px',
+          textTransform: 'uppercase'
+        }}>
+          {subtitle}
+        </p>
+      </div>
 
-// Add CSS animations
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
+      <div style={{ marginBottom: '25px', position: 'relative', zIndex: 1 }}>
+        <input
+          type="text"
+          inputMode="url"
+          placeholder={`Paste ${title} video URL...`}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={loading}
+          onKeyDown={(e) => e.key === 'Enter' && !loading && onDownload()}
+          style={{
+            width: '100%',
+            padding: '20px 24px',
+            borderRadius: '16px',
+            border: `2px solid ${accentColor}40`,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            color: '#fff',
+            fontSize: '15px',
+            outline: 'none',
+            textAlign: 'center',
+            transition: 'all 0.3s ease',
+            boxSizing: 'border-box',
+            boxShadow: `0 4px 20px ${accentColor}20`
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = accentColor;
+            e.currentTarget.style.boxShadow = `0 0 25px ${accentColor}50`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = `${accentColor}40`;
+            e.currentTarget.style.boxShadow = `0 4px 20px ${accentColor}20`;
+          }}
+        />
+      </div>
 
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(40px);
+      <button
+        onClick={onDownload}
+        disabled={loading || !url.trim()}
+        className={btnClass}
+        style={{
+          width: '100%',
+          padding: '20px',
+          borderRadius: '16px',
+          border: 'none',
+          color: '#fff',
+          fontSize: '17px',
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: '1.5px',
+          cursor: loading || !url.trim() ? 'not-allowed' : 'pointer',
+          opacity: loading || !url.trim() ? 0.6 : 1,
+          transition: 'all 0.3s ease',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          position: 'relative',
+          zIndex: 1
+        }}
+      >
+        {loading ? (
+          <>
+            <span style={{ animation: 'pulse 1s infinite' }}>⚡</span>
+            Processing...
+          </>
+        ) : (
+          <>
+            <span>⬇️</span>
+            {buttonText}
+          </>
+        )}
+      </button>
+
+      <div style={{
+        marginTop: '30px',
+        paddingTop: '25px',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex',
+        justifyContent: 'center',
+        gap: '25px',
+        fontSize: '11px',
+        color: '#555',
+        textTransform: 'uppercase',
+        letterSpacing: '1.5px',
+        fontWeight: 600,
+        position: 'relative',
+        zIndex: 1
+      }}>
+        <span style={{ color: accentColor }}>4K Quality</span>
+        <span style={{ color: '#333' }}>•</span>
+        <span>Fast</span>
+        <span style={{ color: '#333' }}>•</span>
+        <span>Free</span>
+      </div>
+    </div>
+  );
+});
+
+// ==========================================
+// MAIN APP
+// ==========================================
+function App() {
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [facebookUrl, setFacebookUrl] = useState('');
+  const [tiktokUrl, setTiktokUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPlatform, setCurrentPlatform] = useState<Platform>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentStage, setCurrentStage] = useState<DownloadStage>(null);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'streamfetch-styles';
+    if (document.getElementById(styleId)) return;
+    
+    const styleSheet = document.createElement('style');
+    styleSheet.id = styleId;
+    styleSheet.textContent = CSS_INJECTION;
+    document.head.appendChild(styleSheet);
+    
+    return () => {
+      const existing = document.getElementById(styleId);
+      if (existing) document.head.removeChild(existing);
+    };
+  }, []);
+
+  const handleDownload = useCallback((platform: 'youtube' | 'facebook' | 'tiktok') => {
+    const url = platform === 'youtube' ? youtubeUrl : platform === 'facebook' ? facebookUrl : tiktokUrl;
+    
+    if (!url.trim()) {
+      setError(`Please paste a ${platform} link first!`);
+      setTimeout(() => setError(null), 3000);
+      return;
     }
-    to {
-      opacity: 1;
-      transform: translateY(0);
+
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube|youtu)\.(com|be)\//i;
+    const facebookRegex = /^(https?:\/\/)?(www\.)?(facebook\.com|fb\.watch)\//i;
+    const tiktokRegex = /^(https?:\/\/)?(www\.)?(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|m\.tiktok\.com)\//i;
+    
+    if (platform === 'youtube' && !youtubeRegex.test(url)) {
+      setError('Invalid YouTube URL!');
+      setTimeout(() => setError(null), 3000);
+      return;
     }
-  }
-
-  @keyframes scanline {
-    0%, 100% { opacity: 0; }
-    50% { opacity: 1; }
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  .error-shake {
-    animation: shake 0.5s ease-in-out !important;
-  }
-
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-    20%, 40%, 60%, 80% { transform: translateX(5px); }
-  }
-
-  .status-toast {
-    position: fixed;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 15px 25px;
-    background: rgba(0, 255, 0, 0.1);
-    border: 1px solid rgba(0, 255, 0, 0.3);
-    color: #00ff00;
-    border-radius: 8px;
-    font-size: 14px;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    animation: slideDown 0.3s ease-out;
-    box-shadow: 0 4px 20px rgba(0, 255, 0, 0.2);
-  }
-
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translate(-50%, -20px);
+    
+    if (platform === 'facebook' && !facebookRegex.test(url)) {
+      setError('Invalid Facebook URL!');
+      setTimeout(() => setError(null), 3000);
+      return;
     }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-  }
-`;
 
-if (typeof document !== 'undefined') {
-  document.head.appendChild(styleSheet);
+    if (platform === 'tiktok' && !tiktokRegex.test(url)) {
+      setError('Invalid TikTok URL!');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    setCurrentPlatform(platform);
+    setLoading(true);
+    setProgress(0);
+    setCurrentStage('connecting');
+
+    const isLocal = window.location.hostname === 'localhost';
+    const baseUrl = isLocal ? 'http://localhost:4000/api/download' : '/api/download';
+    const downloadUrl = `${baseUrl}?url=${encodeURIComponent(url)}`;
+    
+    const originalError = window.onerror;
+    const originalUnhandledRejection = window.onunhandledrejection;
+    
+    window.onerror = (msg, url, line, col, error) => {
+      if (typeof msg === 'string' && msg.includes('play()')) return true;
+      if (originalError) return originalError(msg, url, line, col, error);
+      return false;
+    };
+    
+    window.onunhandledrejection = (event: PromiseRejectionEvent) => {
+      if (event.reason && typeof event.reason === 'object' && 'name' in event.reason && 'message' in event.reason) {
+        const reason = event.reason as any;
+        if (reason.name === 'AbortError' && typeof reason.message === 'string' && reason.message.includes('play()')) {
+          event.preventDefault();
+          return;
+        }
+      }
+      if (originalUnhandledRejection) {
+        (originalUnhandledRejection as any)(event);
+      }
+    };
+
+    const initiateDownload = async () => {
+      try {
+        const response = await fetch(downloadUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Download failed with status ${response.status}`);
+        }
+        
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Cannot read response body');
+        }
+
+        const contentLength = parseInt(response.headers.get('content-length') || '0');
+        let receivedLength = 0;
+        const chunks: BlobPart[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          receivedLength += value.length;
+
+          if (contentLength > 0) {
+            const realProgress = Math.round((receivedLength / contentLength) * 100);
+            const cappedProgress = Math.min(realProgress, 99);
+            
+            setProgress(cappedProgress);
+            console.log(`📊 Real Download Progress: ${cappedProgress}%`);
+
+            if (cappedProgress < 25) {
+              setCurrentStage('fetching');
+            } else if (cappedProgress < 50) {
+              setCurrentStage('quality');
+            } else if (cappedProgress < 75) {
+              setCurrentStage('starting');
+            } else {
+              setCurrentStage('downloading');
+            }
+          } else {
+            const estimatedProgress = Math.min(Math.floor(Math.random() * 30) + 10, 95);
+            setProgress(estimatedProgress);
+          }
+        }
+
+        const blob = new Blob(chunks as BlobPart[], { 
+          type: response.headers.get('content-type') || 'application/octet-stream' 
+        });
+
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = blobUrl;
+
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = `video_${Date.now()}.mp4`;
+        
+        if (contentDisposition) {
+          const filenamePart = contentDisposition.split('filename=')[1];
+          if (filenamePart) {
+            filename = filenamePart.replace(/"/g, '');
+          }
+        }
+
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+
+        link.click();
+
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+
+        setProgress(100);
+        setCurrentStage('complete');
+
+      } catch (err: any) {
+        console.error('❌ Download error:', err);
+        
+        if (platform === 'facebook' || platform === 'tiktok') {
+          setError(`${platform.charAt(0).toUpperCase() + platform.slice(1)} temporarily unavailable. Try another video.`);
+        } else {
+          setError(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+        
+        setTimeout(() => setError(null), 4000);
+      } finally {
+        window.onerror = originalError;
+        window.onunhandledrejection = originalUnhandledRejection;
+      }
+    };
+
+    initiateDownload();
+
+    setTimeout(() => {
+      setLoading(false);
+      setCurrentPlatform(null);
+      setProgress(0);
+      setCurrentStage(null);
+      if (platform === 'youtube') setYoutubeUrl('');
+      else if (platform === 'facebook') setFacebookUrl('');
+      else setTiktokUrl('');
+      
+      window.onerror = originalError;
+      window.onunhandledrejection = originalUnhandledRejection;
+      window.location.href = '/';
+    }, 120000);
+
+  }, [youtubeUrl, facebookUrl, tiktokUrl]);
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '80px 20px 40px 20px',
+      boxSizing: 'border-box',
+      position: 'relative'
+    }}>
+      <div className="animated-bg" />
+      <div className="particles">
+        {[...Array(15)].map((_, i) => (
+          <div key={i} className="particle" style={{ left: `${Math.random() * 100}%`, animationDelay: `${Math.random() * 8}s` }} />
+        ))}
+      </div>
+      <div className="scanline-overlay" />
+
+      <div style={{ textAlign: 'center', marginBottom: '70px', zIndex: 1 }}>
+        <h1 className="main-title" style={{
+          fontSize: 'clamp(48px, 12vw, 72px)',
+          fontWeight: 900,
+          color: '#fff',
+          margin: 0,
+          letterSpacing: '-3px',
+          textShadow: '0 0 50px rgba(255,0,0,0.6), 0 0 100px rgba(24,119,242,0.4)',
+          marginBottom: '15px'
+        }}>
+          Stream<span style={{ 
+            background: 'linear-gradient(90deg, #FF0000, #1877F2)', 
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text'
+          }}>Fetch</span>
+        </h1>
+        <p className="subtitle" style={{
+          color: '#777',
+          fontSize: '18px',
+          fontWeight: 500,
+          letterSpacing: '2px',
+          textTransform: 'uppercase'
+        }}>
+          Universal Video Downloader
+        </p>
+        <div style={{
+          width: '100px',
+          height: '4px',
+          background: 'linear-gradient(90deg, #FF0000, #1877F2)',
+          margin: '25px auto 0',
+          borderRadius: '2px',
+          boxShadow: '0 0 20px rgba(255,0,0,0.5)'
+        }} />
+      </div>
+
+      {error && <ErrorToast message={error} />}
+
+      {loading && currentPlatform && (
+        <LoadingOverlay 
+          platform={currentPlatform} 
+          progress={progress} 
+          currentStage={currentStage}
+        />
+      )}
+
+      <div className="platform-grid" style={{
+        display: 'flex',
+        flexDirection: 'row',
+        gap: '50px',
+        justifyContent: 'center',
+        alignItems: 'stretch',
+        flexWrap: 'wrap',
+        width: '100%',
+        maxWidth: '1350px',
+        zIndex: 1,
+        padding: '20px',
+        boxSizing: 'border-box'
+      }}>
+        <PlatformCard
+          platform="youtube"
+          url={youtubeUrl}
+          setUrl={setYoutubeUrl}
+          loading={loading && currentPlatform === 'youtube'}
+          onDownload={() => handleDownload('youtube')}
+        />
+        
+        <PlatformCard
+          platform="facebook"
+          url={facebookUrl}
+          setUrl={setFacebookUrl}
+          loading={loading && currentPlatform === 'facebook'}
+          onDownload={() => handleDownload('facebook')}
+        />
+
+        <PlatformCard
+          platform="tiktok"
+          url={tiktokUrl}
+          setUrl={setTiktokUrl}
+          loading={loading && currentPlatform === 'tiktok'}
+          onDownload={() => handleDownload('tiktok')}
+        />
+      </div>
+
+      <div style={{
+        marginTop: '80px',
+        textAlign: 'center',
+        zIndex: 1,
+        padding: '30px',
+        borderRadius: '20px',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        backdropFilter: 'blur(10px)'
+      }}>
+        <p style={{
+          color: '#555',
+          fontSize: '13px',
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          marginBottom: '10px'
+        }}>
+          © 2026 StreamFetch
+        </p>
+        <p style={{
+          color: '#888',
+          fontSize: '16px',
+          fontWeight: 600
+        }}>
+          Crafted with <span className="author-glow" style={{ color: '#ff3333' }}>🔥</span> by{' '}
+          <span style={{ 
+            color: '#fff', 
+            fontWeight: 800,
+            textShadow: '0 0 20px rgba(255,255,255,0.3)',
+            background: 'linear-gradient(90deg, #FF0000, #1877F2)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            fontSize: '18px'
+          }}>
+            Gilbert Favour James
+          </span>
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default App;
